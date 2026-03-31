@@ -102,15 +102,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 .spinner{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* Key Setup Section */
-.key-setup{background:#fff3cd;border:1px solid #ffc107;border-radius:var(--radius);padding:1rem;margin-bottom:1.25rem;max-width:1440px;margin-left:auto;margin-right:auto;font-size:.85rem}
-.key-setup.ok{background:#d1e7dd;border-color:#0f5132}
-.key-setup summary{cursor:pointer;font-weight:600;color:var(--text)}
-.key-setup .key-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem}
-.key-setup input{font-family:monospace;font-size:.8rem;padding:.4rem .6rem}
-.key-setup .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-.key-setup .dot.on{background:#22c55e}.key-setup .dot.off{background:#ef4444}
-@media(max-width:700px){.key-setup .key-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -122,22 +113,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
   </div>
 </header>
 
-<!-- Collapsible API Key Setup -->
-<div style="max-width:1440px;margin:1rem auto 0;padding:0 1.25rem">
-  <details id="keySetup" class="key-setup">
-    <summary><span class="dot off" id="keyDot"></span> API Keys</summary>
-    <div class="key-grid">
-      <div class="field">
-        <label class="field-label">Google Maps Key</label>
-        <input type="password" id="mapsKeyInput" placeholder="AIza..." autocomplete="off">
-      </div>
-      <div class="field">
-        <label class="field-label">Gemini AI Key</label>
-        <input type="password" id="geminiKeyInput" placeholder="AIza..." autocomplete="off">
-      </div>
-    </div>
-    <p style="font-size:.78rem;color:var(--muted);margin-top:.25rem">Keys are loaded from URL params <code>?mapskey=</code> and <code>?key=</code>. Both keys have referrer restrictions and only work from this domain.</p>
-  </details>
+<!-- Hidden key inputs (not displayed, kept for JS compatibility) -->
+<div style="display:none">
+  <input type="password" id="mapsKeyInput" autocomplete="off">
+  <input type="password" id="geminiKeyInput" autocomplete="off">
+  <span id="keyDot"></span>
+  <details id="keySetup"></details>
 </div>
 
 <div class="app-grid">
