@@ -266,7 +266,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 
 <script>
 // ── Config & State ──────────────────────────────────────────
-let mapsKey = '', geminiKey = '';
+let mapsKey = 'AIzaSyCm1ZwHcgOlzvnu-dlGAgJgfAtW14TUPNw', geminiKey = 'AIzaSyAt1hraoOYpejcEN2OiatcEM-pN1AOwXwQ';
 let panorama = null, svService = null;
 let captures = [];   // [{url, base64, heading, pitch, zoom}]
 let selectedCapture = -1;
@@ -276,8 +276,9 @@ let mapsReady = false;
 // ── Init ────────────────────────────────────────────────────
 function init() {
   const p = new URLSearchParams(location.search);
-  mapsKey = p.get('mapskey') || '';
-  geminiKey = p.get('key') || '';
+  // URL params override embedded keys if provided
+  mapsKey = p.get('mapskey') || mapsKey;
+  geminiKey = p.get('key') || geminiKey;
   document.getElementById('mapsKeyInput').value = mapsKey;
   document.getElementById('geminiKeyInput').value = geminiKey;
 
