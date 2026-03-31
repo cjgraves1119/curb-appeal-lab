@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Curb Appeal Lab</title>
+<title>AI Home Renovator</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -55,6 +55,27 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 .capture-thumb:hover .remove-btn{opacity:1}
 .capture-empty{width:120px;height:80px;border-radius:6px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.75rem;text-align:center;padding:.5rem}
 
+/* Lightbox */
+.lightbox-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1.5rem}
+.lightbox-overlay img{max-width:90vw;max-height:88vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.lightbox-overlay .lb-close{position:fixed;top:1rem;right:1.25rem;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:1.5rem;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s}
+.lightbox-overlay .lb-close:hover{background:rgba(255,255,255,.3)}
+.lightbox-overlay .lb-label{position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.7);font-size:.8rem;font-family:monospace}
+
+/* Upload dropzone */
+.upload-zone{border:2px dashed var(--border);border-radius:8px;padding:1rem;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;font-size:.85rem;color:var(--muted);margin-top:.75rem}
+.upload-zone:hover,.upload-zone.drag-over{border-color:var(--primary);background:#f0faf4}
+.upload-zone input{display:none}
+
+/* Renders grid */
+.renders-grid{display:grid;gap:.75rem}
+.renders-grid.count-1{grid-template-columns:1fr}
+.renders-grid.count-2{grid-template-columns:1fr 1fr}
+.renders-grid.count-3{grid-template-columns:1fr 1fr 1fr}
+.render-item{position:relative}
+.render-item img{width:100%;border-radius:8px;display:block}
+.render-item .render-label{position:absolute;bottom:.4rem;left:.4rem;background:rgba(0,0,0,.55);color:#fff;font-size:.7rem;padding:.2rem .45rem;border-radius:4px}
+
 /* Improvement Ideas */
 .idea-card{padding:.6rem .75rem;border:1px solid var(--border);border-radius:6px;margin-bottom:.5rem;cursor:pointer;transition:background .2s,border-color .2s;font-size:.85rem}
 .idea-card:hover{background:#f5f3ed}
@@ -96,7 +117,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 
 <header>
   <div>
-    <h1>Curb Appeal Lab</h1>
+    <h1>AI Home Renovator</h1>
     <div class="subtitle">AI-powered home exterior makeover visualization</div>
   </div>
 </header>
@@ -108,11 +129,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
     <div class="key-grid">
       <div class="field">
         <label class="field-label">Google Maps Key</label>
-        <input type="text" id="mapsKeyInput" placeholder="AIza...">
+        <input type="password" id="mapsKeyInput" placeholder="AIza..." autocomplete="off">
       </div>
       <div class="field">
         <label class="field-label">Gemini AI Key</label>
-        <input type="text" id="geminiKeyInput" placeholder="AIza...">
+        <input type="password" id="geminiKeyInput" placeholder="AIza..." autocomplete="off">
       </div>
     </div>
     <p style="font-size:.78rem;color:var(--muted);margin-top:.25rem">Keys are loaded from URL params <code>?mapskey=</code> and <code>?key=</code>. Both keys have referrer restrictions and only work from this domain.</p>
@@ -157,9 +178,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
       <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeAndSuggest()" disabled style="margin-top:.75rem">
         <span class="step-badge">2</span> AI Analysis &amp; Ideas
       </button>
-      <button class="btn btn-accent" id="renderBtn" onclick="renderMakeover()" disabled style="margin-top:.5rem">
-        <span class="step-badge">3</span> Render Makeover
-      </button>
+      <div style="margin-top:.5rem;display:flex;align-items:center;gap:.5rem">
+        <button class="btn btn-accent" id="renderBtn" onclick="renderMakeover()" disabled style="flex:1">
+          <span class="step-badge">3</span> Render Makeover
+        </button>
+        <select id="renderCount" title="Number of renders" style="width:54px;padding:.6rem .4rem;border:1px solid var(--border);border-radius:6px;font-size:.85rem;background:#fafaf8">
+          <option value="1" selected>×1</option>
+          <option value="2">×2</option>
+          <option value="3">×3</option>
+        </select>
+      </div>
 
       <hr style="margin:1rem 0;border:none;border-top:1px solid var(--border)">
       <button class="btn btn-secondary" onclick="loadSampleIdeas()">Load Sample Ideas (offline)</button>
@@ -186,6 +214,10 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
       <button class="btn btn-secondary" id="captureBtn" onclick="captureAngle()" style="margin-top:.75rem;display:none">
         📸 Capture This Angle
       </button>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('uploadInput').click()" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleDrop(event)">
+        <input type="file" id="uploadInput" accept="image/*" multiple onchange="handleUpload(this.files)">
+        📁 Upload your own photos (drag &amp; drop or click)
+      </div>
       <div class="captures-strip" id="capturesStrip">
         <!-- Captured angle thumbnails appear here -->
       </div>
@@ -223,6 +255,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
     </div>
   </div>
 
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox-overlay" id="lightbox" style="display:none" onclick="closeLightbox(event)">
+  <button class="lb-close" onclick="closeLightbox()">✕</button>
+  <img id="lightboxImg" src="" alt="Captured angle">
+  <div class="lb-label" id="lightboxLabel"></div>
 </div>
 
 <script>
@@ -407,6 +446,7 @@ async function captureAngle() {
     captures.push({ url: dataUrl, base64, heading, pitch, zoom, fov });
     selectedCapture = captures.length - 1;
     renderCaptureStrip();
+    syncRenderCount();
     document.getElementById('analyzeBtn').disabled = false;
     document.getElementById('renderBtn').disabled = false;
     showStatus('svStatus', `Angle captured! (${heading}° heading, ${pitch}° pitch). Capture more angles, run AI Analysis, or type your own prompt and Render.`, 'success');
@@ -436,6 +476,7 @@ function renderCaptureStrip() {
 function selectCapture(i) {
   selectedCapture = i;
   renderCaptureStrip();
+  showLightbox(i);
 }
 
 function removeCapture(i) {
@@ -444,6 +485,59 @@ function removeCapture(i) {
   renderCaptureStrip();
   document.getElementById('analyzeBtn').disabled = captures.length === 0;
   document.getElementById('renderBtn').disabled = captures.length === 0;
+  syncRenderCount();
+}
+
+// ── Lightbox ─────────────────────────────────────────────────
+function showLightbox(i) {
+  const cap = captures[i];
+  if (!cap) return;
+  document.getElementById('lightboxImg').src = cap.url;
+  document.getElementById('lightboxLabel').textContent =
+    cap.heading != null ? `${cap.heading}° heading · ${cap.pitch}° pitch · zoom ${cap.zoom}x` : 'Uploaded image';
+  document.getElementById('lightbox').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeLightbox(e) {
+  if (e && e.target !== e.currentTarget && !e.target.classList.contains('lb-close')) return;
+  document.getElementById('lightbox').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox({target:document.getElementById('lightbox'),currentTarget:document.getElementById('lightbox')}); });
+
+// ── Upload Images ────────────────────────────────────────────
+function handleUpload(files) {
+  [...files].forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const dataUrl = e.target.result;
+      const base64 = dataUrl.split(',')[1];
+      captures.push({ url: dataUrl, base64, heading: null, pitch: null, zoom: null, fov: null, uploaded: true });
+      selectedCapture = captures.length - 1;
+      renderCaptureStrip();
+      syncRenderCount();
+      document.getElementById('analyzeBtn').disabled = false;
+      document.getElementById('renderBtn').disabled = false;
+      showStatus('svStatus', `Photo uploaded (${captures.length} total). Capture more or proceed to Render.`, 'success');
+    };
+    reader.readAsDataURL(file);
+  });
+  document.getElementById('uploadInput').value = '';
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('uploadZone').classList.remove('drag-over');
+  handleUpload(e.dataTransfer.files);
+}
+
+// ── Sync render count default ────────────────────────────────
+function syncRenderCount() {
+  const sel = document.getElementById('renderCount');
+  const n = Math.min(captures.length, 3);
+  if (n > 0) sel.value = String(n);
 }
 
 // ── AI Analysis ─────────────────────────────────────────────
@@ -546,55 +640,81 @@ async function renderMakeover() {
 
   const btn = document.getElementById('renderBtn');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Rendering...';
 
-  let prompt = document.getElementById('promptArea').value.trim();
-  if (!prompt) {
-    prompt = 'Using these photos of a house exterior, generate a photorealistic improved version showing tasteful curb appeal upgrades: fresh landscaping, updated lighting, a cleaner driveway, and a refreshed front entrance. Keep the same house structure and style but make it look its absolute best.';
-  }
+  const renderCount = parseInt(document.getElementById('renderCount').value) || 1;
+  const basePrompt = document.getElementById('promptArea').value.trim() ||
+    'Using these photos of a house exterior, generate a photorealistic improved version showing tasteful curb appeal upgrades: fresh landscaping, updated lighting, a cleaner driveway, and a refreshed front entrance. Keep the same house structure and style but make it look its absolute best.';
 
-  // Send ALL captured angles so the model gets the full picture
   const imgCount = captures.length;
-  showStatus('renderStatus', `Sending ${imgCount} angle${imgCount > 1 ? 's' : ''} to Gemini for makeover (this takes 15-30 seconds)...`, 'info');
+  const container = document.getElementById('makeover-container');
+  container.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.className = `renders-grid count-${renderCount}`;
+  container.appendChild(grid);
 
-  try {
-    const parts = [];
+  // Build angle labels from captures (for heading-aware prompts)
+  const angleHeadings = captures
+    .filter(c => c.heading != null)
+    .map(c => c.heading);
 
-    // Add all captured images
-    for (const cap of captures) {
-      if (cap.base64) {
-        parts.push({ inlineData: { mimeType: 'image/jpeg', data: cap.base64 } });
-      }
+  showStatus('renderStatus', `Generating ${renderCount} render${renderCount > 1 ? 's' : ''} — this may take 15–45 seconds...`, 'info');
+
+  // Build shared image parts (all captures sent to each render)
+  const sharedParts = captures
+    .filter(c => c.base64)
+    .map(c => ({ inlineData: { mimeType: 'image/jpeg', data: c.base64 } }));
+
+  let successCount = 0;
+
+  for (let r = 0; r < renderCount; r++) {
+    btn.innerHTML = `<span class="spinner"></span> Rendering ${r + 1}/${renderCount}...`;
+
+    // Pick the heading angle to focus on for this render (spread across capture angles)
+    let angleHint = '';
+    if (angleHeadings.length > 0) {
+      const idx = Math.round(r * (angleHeadings.length - 1) / Math.max(renderCount - 1, 1));
+      const h = angleHeadings[Math.min(idx, angleHeadings.length - 1)];
+      angleHint = renderCount > 1 ? ` Show the house from approximately ${h}° heading.` : '';
     }
 
-    // Add context about the angles if multiple
-    if (imgCount > 1) {
-      parts.push({ text: `I'm providing ${imgCount} different angles of the same house so you can see the full exterior. Use all angles to understand the complete picture, including areas that may be obstructed in one view but visible in another.\n\n${prompt}` });
-    } else {
-      parts.push({ text: prompt });
-    }
+    const fullPrompt = imgCount > 1
+      ? `I'm providing ${imgCount} different angles of the same house so you can see the full exterior. Use all angles to understand the complete picture.${angleHint}\n\n${basePrompt}`
+      : basePrompt + angleHint;
 
+    const parts = [...sharedParts, { text: fullPrompt }];
     const body = {
       contents: [{ parts }],
-      generationConfig: { temperature: 0.8, responseModalities: ['TEXT', 'IMAGE'] }
+      generationConfig: { temperature: 0.8 + r * 0.05, responseModalities: ['TEXT', 'IMAGE'] }
     };
 
-    const data = await callGemini('gemini-3.1-flash-image-preview', body);
-    const imgData = extractImage(data);
-    if (imgData) {
-      const container = document.getElementById('makeover-container');
-      container.innerHTML = `<img src="data:image/png;base64,${imgData}" alt="AI Makeover">`;
-      showStatus('renderStatus', `Makeover rendered from ${imgCount} angle${imgCount > 1 ? 's' : ''}! Compare with the original Street View above.`, 'success');
-    } else {
-      const textResp = extractText(data);
-      showStatus('renderStatus', `No image returned. Model response: ${textResp.substring(0, 200)}`, 'error');
+    try {
+      const data = await callGemini('gemini-3.1-flash-image-preview', body);
+      const imgData = extractImage(data);
+      if (imgData) {
+        const item = document.createElement('div');
+        item.className = 'render-item';
+        const label = renderCount > 1 ? `Render ${r + 1}${angleHint ? ' · ' + angleHint.trim() : ''}` : '';
+        item.innerHTML = `<img src="data:image/png;base64,${imgData}" alt="Render ${r + 1}">${label ? `<div class="render-label">${label}</div>` : ''}`;
+        grid.appendChild(item);
+        successCount++;
+      } else {
+        const textResp = extractText(data);
+        const item = document.createElement('div');
+        item.className = 'render-item';
+        item.innerHTML = `<div style="padding:1rem;color:var(--muted);font-size:.82rem">Render ${r+1}: No image returned — ${textResp.substring(0, 120)}</div>`;
+        grid.appendChild(item);
+      }
+    } catch (err) {
+      const item = document.createElement('div');
+      item.className = 'render-item';
+      item.innerHTML = `<div style="padding:1rem;color:#991b1b;font-size:.82rem">Render ${r+1} error: ${err.message}</div>`;
+      grid.appendChild(item);
     }
-  } catch (err) {
-    showStatus('renderStatus', `Render error: ${err.message}`, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<span class="step-badge">3</span> Render Makeover';
   }
+
+  showStatus('renderStatus', `${successCount} of ${renderCount} render${renderCount > 1 ? 's' : ''} complete. Compare with the original Street View above.`, successCount > 0 ? 'success' : 'error');
+  btn.disabled = false;
+  btn.innerHTML = '<span class="step-badge">3</span> Render Makeover';
 }
 
 // ── Gemini API ──────────────────────────────────────────────
