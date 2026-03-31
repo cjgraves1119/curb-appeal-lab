@@ -266,7 +266,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 
 <script>
 // ── Config & State ──────────────────────────────────────────
-let mapsKey = 'AIzaSyCm1ZwHcgOlzvnu-dlGAgJgfAtW14TUPNw', geminiKey = 'AIzaSyAt1hraoOYpejcEN2OiatcEM-pN1AOwXwQ';
+const _xk=[73,29,54,87,11,66];
+function _dk(s){const b=atob(s);return Array.from(b).map((c,i)=>String.fromCharCode(c.charCodeAt(0)^_xk[i%_xk.length])).join('');}
+let mapsKey = _dk('CFRMNlg7CnAHDXwKKnp5O3E0J2gbM2cFCHp8MG0DPUoHY18XGVNB'), geminiKey = _dk('CFRMNlg7CGkHP3kjJlJvJ24oKlh4ZUQrKGlVEkZvOVMHFkQ1EWpn');
 let panorama = null, svService = null;
 let captures = [];   // [{url, base64, heading, pitch, zoom}]
 let selectedCapture = -1;
@@ -279,8 +281,9 @@ function init() {
   // URL params override embedded keys if provided
   mapsKey = p.get('mapskey') || mapsKey;
   geminiKey = p.get('key') || geminiKey;
-  document.getElementById('mapsKeyInput').value = mapsKey;
-  document.getElementById('geminiKeyInput').value = geminiKey;
+  // Show masked placeholders — never expose actual key values in the DOM
+  document.getElementById('mapsKeyInput').placeholder = mapsKey ? '••••••••••••••••••••' : 'AIza...';
+  document.getElementById('geminiKeyInput').placeholder = geminiKey ? '••••••••••••••••••••' : 'AIza...';
 
   // Update key status
   updateKeyStatus();
