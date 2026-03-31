@@ -446,33 +446,33 @@ async function captureAngle() {
   if (!panorama) return;
   const pov = panorama.getPov();
   const zoom = panorama.getZoom();
-  const pos = panorama.getPosition();
   const fov = Math.round(180 / Math.pow(2, zoom));
   const heading = Math.round((pov.heading + 360) % 360);
   const pitch = Math.round(pov.pitch);
 
-  // Build static image URL
-  const staticUrl = `https://maps.googleapis.com/maps/api/streetview?size=800x600`
-    + `&location=${pos.lat()},${pos.lng()}`
-    + `&heading=${heading}&pitch=${pitch}&fov=${fov}`
-    + `&key=${mapsKey}`;
-
-  showStatus('svStatus', 'Capturing angle...', 'info');
+  showStatus('svStatus', 'Capturing angle from panorama...', 'info');
 
   try {
-    const base64 = await urlToBase64(staticUrl);
-    captures.push({ url: staticUrl, base64, heading, pitch, zoom, fov });
+    // Grab the image directly from the panorama's canvas (no API call needed)
+    const container = document.getElementById('sv-panorama');
+    const canvas = container.querySelector('canvas');
+    if (!canvas) throw new Error('Panorama canvas not found. Make sure Street View has loaded.');
+
+    // Create a copy canvas at a good resolution
+    const copyCanvas = document.createElement('canvas');
+    copyCanvas.width = canvas.width;
+    copyCanvas.height = canvas.height;
+    copyCanvas.getContext('2d').drawImage(canvas, 0, 0);
+    const base64 = copyCanvas.toDataURL('image/jpeg', 0.9).split(',')[1];
+    const dataUrl = 'data:image/jpeg;base64,' + base64;
+
+    captures.push({ url: dataUrl, base64, heading, pitch, zoom, fov });
     selectedCapture = captures.length - 1;
     renderCaptureStrip();
     document.getElementById('analyzeBtn').disabled = false;
     showStatus('svStatus', `Angle captured! (${heading}° heading, ${pitch}° pitch). Capture more angles or proceed to AI Analysis.`, 'success');
   } catch (err) {
-    showStatus('svStatus', `Capture failed: ${err.message}. Trying direct URL method...`, 'error');
-    // Fallback: store URL without base64, will convert later
-    captures.push({ url: staticUrl, base64: null, heading, pitch, zoom, fov });
-    selectedCapture = captures.length - 1;
-    renderCaptureStrip();
-    document.getElementById('analyzeBtn').disabled = false;
+    showStatus('svStatus', `Capture failed: ${err.message}`, 'error');
   }
 }
 
