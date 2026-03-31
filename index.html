@@ -553,7 +553,7 @@ async function loadStreetView() {
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
     };
 
-    var data = await callGemini('gemini-2.5-flash-image', payload, 90000);
+    var data = await callGemini('gemini-3.1-flash-image-preview', payload, 90000);
     var img = extractImage(data);
     if (!img) throw new Error('Gemini did not return an image. Try again or try a different address.');
 
@@ -791,7 +791,7 @@ async function renderMakeover() {
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
     };
 
-    var data = await callGemini('gemini-2.5-flash-image', payload, 120000);
+    var data = await callGemini('gemini-3.1-flash-image-preview', payload, 120000);
     var img = extractImage(data);
     if (!img) throw new Error('Gemini did not return an image. The model may need a different prompt or the quota may be exhausted.');
 
