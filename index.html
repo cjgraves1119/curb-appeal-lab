@@ -85,6 +85,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
 .render-item{position:relative}
 .render-item img{width:100%;border-radius:8px;display:block}
 .render-item .render-label{position:absolute;bottom:.4rem;left:.4rem;background:rgba(0,0,0,.55);color:#fff;font-size:.7rem;padding:.2rem .45rem;border-radius:4px}
+.render-item .btn3d-render{position:absolute;top:.5rem;right:.5rem;background:rgba(45,106,79,.92);color:#fff;border:none;border-radius:6px;padding:.4rem .8rem;font-size:.78rem;font-weight:700;cursor:pointer;opacity:0;transition:opacity .2s;letter-spacing:.03em;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+.render-item:hover .btn3d-render{opacity:1}
+.depth-progress{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.8);color:#fff;padding:1rem 1.5rem;border-radius:8px;font-size:.85rem;text-align:center;z-index:1003;backdrop-filter:blur(6px)}
 
 /* Improvement Ideas */
 .idea-card{padding:.6rem .75rem;border:1px solid var(--border);border-radius:6px;margin-bottom:.5rem;cursor:pointer;transition:background .2s,border-color .2s;font-size:.85rem}
@@ -260,7 +263,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary)
   <button class="lb-close" onclick="closeLightbox()">✕</button>
   <img id="lightboxImg" src="" alt="Captured angle">
   <div class="lb-label" id="lightboxLabel"></div>
-  <button id="lightbox3dBtn" onclick="closeLightbox();open3DViewer(selectedCapture)" style="position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;border:none;border-radius:6px;padding:.5rem 1.25rem;font-size:.85rem;font-weight:600;cursor:pointer;letter-spacing:.02em">🧊 View in 3D</button>
+  <button id="lightbox3dBtn" onclick="closeLightbox({target:document.getElementById('lightbox'),currentTarget:document.getElementById('lightbox')});open3DViewer(selectedCapture)" style="position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;border:none;border-radius:6px;padding:.5rem 1.25rem;font-size:.85rem;font-weight:600;cursor:pointer;letter-spacing:.02em">🧊 View in 3D</button>
 </div>
 
 <script>
@@ -272,6 +275,7 @@ let panorama = null, svService = null;
 let captures = [];   // [{url, base64, heading, pitch, zoom}]
 let selectedCapture = -1;
 let improvements = [];
+let renderDataUrls = []; // stored data URLs for rendered makeover images
 let mapsReady = false;
 
 // ── Init ────────────────────────────────────────────────────
@@ -651,6 +655,7 @@ async function renderMakeover() {
   const imgCount = captures.length;
   const container = document.getElementById('makeover-container');
   container.innerHTML = '';
+  renderDataUrls = [];
   const grid = document.createElement('div');
   grid.className = `renders-grid count-${renderCount}`;
   container.appendChild(grid);
@@ -694,10 +699,14 @@ async function renderMakeover() {
       const data = await callGemini('gemini-3.1-flash-image-preview', body);
       const imgData = extractImage(data);
       if (imgData) {
+        const renderUrl = `data:image/png;base64,${imgData}`;
+        const renderIdx = renderDataUrls.length;
+        renderDataUrls.push(renderUrl);
         const item = document.createElement('div');
         item.className = 'render-item';
         const label = renderCount > 1 ? `Render ${r + 1}${angleHint ? ' · ' + angleHint.trim() : ''}` : '';
-        item.innerHTML = `<img src="data:image/png;base64,${imgData}" alt="Render ${r + 1}">${label ? `<div class="render-label">${label}</div>` : ''}`;
+        item.innerHTML = `<img src="${renderUrl}" alt="Render ${r + 1}">${label ? `<div class="render-label">${label}</div>` : ''}<button class="btn3d-render" onclick="event.stopPropagation();open3DViewer('${renderIdx}')" title="View in 3D">🧊 3D</button>`;
+        item.querySelector('img').addEventListener('click', () => showRenderLightbox(renderIdx));
         grid.appendChild(item);
         successCount++;
       } else {
@@ -795,8 +804,21 @@ function loadSampleIdeas() {
   showStatus('analysisStatus', 'Sample ideas loaded. Select the ones you want and proceed to render.', 'success');
 }
 
-// ── 3D Depth Viewer ─────────────────────────────────────────
-let _three = null; // cached Three.js scene
+// ── Render Lightbox ──────────────────────────────────────────
+function showRenderLightbox(renderIdx) {
+  const url = renderDataUrls[renderIdx];
+  if (!url) return;
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightboxLabel').textContent = `AI Render ${parseInt(renderIdx) + 1}`;
+  document.getElementById('lightbox3dBtn').onclick = () => { closeLightbox({target:document.getElementById('lightbox'),currentTarget:document.getElementById('lightbox')}); open3DViewer(String(renderIdx)); };
+  document.getElementById('lightbox').style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+// ── 3D Depth Viewer (Depth Anything V2 via Transformers.js) ──
+let _three = null;
+let depthEstimator = null;
+let depthModelLoading = false;
 
 function loadScript(src) {
   return new Promise((res, rej) => {
@@ -807,57 +829,127 @@ function loadScript(src) {
   });
 }
 
-async function open3DViewer(i) {
-  const cap = captures[i];
-  if (!cap) return;
+async function getDepthEstimator(labelEl) {
+  if (depthEstimator) return depthEstimator;
+  if (depthModelLoading) {
+    // Wait for in-progress load
+    while (!depthEstimator) await new Promise(r => setTimeout(r, 200));
+    return depthEstimator;
+  }
+  depthModelLoading = true;
+  labelEl.textContent = 'Loading AI depth model (first time ~26MB download)...';
+  try {
+    const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3');
+    env.allowLocalModels = false;
+    depthEstimator = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', {
+      dtype: 'q8',
+      progress_callback: (p) => {
+        if (p.status === 'download' && p.total) {
+          const pct = Math.round((p.loaded / p.total) * 100);
+          labelEl.textContent = `Downloading depth model... ${pct}%`;
+        } else if (p.status === 'ready') {
+          labelEl.textContent = 'Depth model ready! Estimating depth...';
+        }
+      }
+    });
+  } catch (err) {
+    depthModelLoading = false;
+    throw new Error('Failed to load depth model: ' + err.message);
+  }
+  return depthEstimator;
+}
+
+async function open3DViewer(source) {
+  // source can be: number (capture index) or string (render index into renderDataUrls)
+  let imgUrl, infoLabel = '';
+  if (typeof source === 'number') {
+    const cap = captures[source];
+    if (!cap) return;
+    imgUrl = cap.url;
+    infoLabel = cap.heading != null ? ` · ${cap.heading}° heading` : '';
+  } else {
+    // String: render index
+    const idx = parseInt(source);
+    imgUrl = renderDataUrls[idx];
+    if (!imgUrl) return;
+    infoLabel = ` · AI Render ${idx + 1}`;
+  }
+
   const overlay = document.getElementById('viewer3d');
   overlay.style.display = 'flex';
   document.body.style.overflow = 'hidden';
-  document.getElementById('viewer3dLabel').textContent = 'Building depth map...';
+  const labelEl = document.getElementById('viewer3dLabel');
+  labelEl.textContent = 'Preparing AI depth estimation...';
 
   // Dispose previous scene
-  if (_three) { _three.renderer.dispose(); _three = null; }
+  if (_three) { _three.cleanup(); _three.renderer.dispose(); _three = null; }
   document.getElementById('viewer3dCanvas').innerHTML = '';
 
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+  try {
+    // Load Three.js and depth model in parallel
+    const [, estimator] = await Promise.all([
+      loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'),
+      getDepthEstimator(labelEl)
+    ]);
 
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => build3DScene(cap, img);
-  img.onerror = () => document.getElementById('viewer3dLabel').textContent = 'Could not load image for 3D view.';
-  img.src = cap.url;
+    labelEl.textContent = 'Running AI depth estimation...';
+
+    // Run depth estimation on the image
+    const depthResult = await estimator(imgUrl);
+
+    labelEl.textContent = 'Building 3D scene...';
+
+    // Load the original image for texture
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = 'anonymous';
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('Image load failed'));
+      i.src = imgUrl;
+    });
+
+    build3DScene(img, imgUrl, depthResult, infoLabel);
+  } catch (err) {
+    labelEl.textContent = `Error: ${err.message}`;
+  }
 }
 
-function build3DScene(cap, img) {
+function build3DScene(img, imgUrl, depthResult, infoLabel) {
   const container = document.getElementById('viewer3dCanvas');
   const W = img.naturalWidth, H = img.naturalHeight;
 
-  // ── Build depth map via luminance + canvas blur ──────────
-  const off = document.createElement('canvas');
-  off.width = W; off.height = H;
-  const ctx = off.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  const px = ctx.getImageData(0, 0, W, H).data;
+  // ── Extract AI depth map pixels ──────────────────────────
+  // depthResult.depth is a RawImage from Transformers.js
+  const depthImg = depthResult.depth;
+  const depthCanvas = document.createElement('canvas');
+  depthCanvas.width = depthImg.width;
+  depthCanvas.height = depthImg.height;
+  const dCtx = depthCanvas.getContext('2d');
+  const dImageData = dCtx.createImageData(depthImg.width, depthImg.height);
 
-  // Luminance → grayscale depth canvas
-  const grayCanvas = document.createElement('canvas');
-  grayCanvas.width = W; grayCanvas.height = H;
-  const gCtx = grayCanvas.getContext('2d');
-  const gData = gCtx.createImageData(W, H);
-  for (let i = 0; i < W * H; i++) {
-    const lum = 255 - Math.round(0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]);
-    gData.data[i*4] = gData.data[i*4+1] = gData.data[i*4+2] = lum;
-    gData.data[i*4+3] = 255;
+  // RawImage.data contains grayscale depth values
+  for (let i = 0; i < depthImg.width * depthImg.height; i++) {
+    const v = depthImg.data[i];
+    dImageData.data[i * 4] = v;
+    dImageData.data[i * 4 + 1] = v;
+    dImageData.data[i * 4 + 2] = v;
+    dImageData.data[i * 4 + 3] = 255;
   }
-  gCtx.putImageData(gData, 0, 0);
+  dCtx.putImageData(dImageData, 0, 0);
 
-  // Blur for smooth depth transitions
-  const blurRadius = Math.max(6, Math.floor(W / 60));
+  // Scale depth map to match original image size if needed
+  const scaledDepth = document.createElement('canvas');
+  scaledDepth.width = W;
+  scaledDepth.height = H;
+  const sCtx = scaledDepth.getContext('2d');
+  sCtx.drawImage(depthCanvas, 0, 0, W, H);
+
+  // Light blur for smoother displacement
   const blurCanvas = document.createElement('canvas');
   blurCanvas.width = W; blurCanvas.height = H;
   const bCtx = blurCanvas.getContext('2d');
-  bCtx.filter = `blur(${blurRadius}px)`;
-  bCtx.drawImage(grayCanvas, 0, 0);
+  bCtx.filter = 'blur(3px)';
+  bCtx.drawImage(scaledDepth, 0, 0);
   const depthPx = bCtx.getImageData(0, 0, W, H).data;
 
   // ── Three.js scene ───────────────────────────────────────
@@ -872,12 +964,12 @@ function build3DScene(cap, img) {
   const camera = new THREE.PerspectiveCamera(42, cW / cH, 0.1, 100);
   camera.position.z = 3.2;
 
-  // Displaced plane mesh
-  const segs = 120;
+  // Displaced plane mesh with higher resolution for AI depth
+  const segs = 150;
   const aspect = W / H;
-  const geo = new THREE.PlaneGeometry(4 * aspect, 4, segs * aspect | 0, segs);
+  const geo = new THREE.PlaneGeometry(4 * aspect, 4, Math.round(segs * aspect), segs);
   const pos = geo.attributes.position;
-  const maxDisplace = 0.55;
+  const maxDisplace = 0.65;
 
   for (let i = 0; i < pos.count; i++) {
     const u = pos.getX(i) / (4 * aspect) + 0.5;
@@ -890,7 +982,9 @@ function build3DScene(cap, img) {
   pos.needsUpdate = true;
   geo.computeVertexNormals();
 
-  const tex = new THREE.TextureLoader().load(cap.url);
+  const tex = new THREE.TextureLoader().load(imgUrl);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   scene.add(mesh);
@@ -899,14 +993,14 @@ function build3DScene(cap, img) {
   let targetX = 0, targetY = 0, curX = 0, curY = 0;
   const onMove = e => {
     const rect = container.getBoundingClientRect();
-    targetX = ((e.clientX - rect.left) / rect.width - 0.5) * 0.35;
-    targetY = -((e.clientY - rect.top) / rect.height - 0.5) * 0.25;
+    targetX = ((e.clientX - rect.left) / rect.width - 0.5) * 0.4;
+    targetY = -((e.clientY - rect.top) / rect.height - 0.5) * 0.3;
   };
   const onTouch = e => {
     const t = e.touches[0];
     const rect = container.getBoundingClientRect();
-    targetX = ((t.clientX - rect.left) / rect.width - 0.5) * 0.35;
-    targetY = -((t.clientY - rect.top) / rect.height - 0.5) * 0.25;
+    targetX = ((t.clientX - rect.left) / rect.width - 0.5) * 0.4;
+    targetY = -((t.clientY - rect.top) / rect.height - 0.5) * 0.3;
   };
   container.addEventListener('mousemove', onMove);
   container.addEventListener('touchmove', onTouch);
@@ -931,7 +1025,7 @@ function build3DScene(cap, img) {
   }};
 
   document.getElementById('viewer3dLabel').textContent =
-    `Move your mouse over the image to explore in 3D${cap.heading != null ? ` · ${cap.heading}° heading` : ''}`;
+    `AI Depth Estimation (Depth Anything V2) · Move mouse to explore${infoLabel}`;
 }
 
 function close3DViewer() {
